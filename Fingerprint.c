@@ -42,42 +42,42 @@ void init(){
 
         // Config
         struct termios config;
-
+        config.c_cflag = (config.c_cflag & ~CSIZE) | CS8; 
         tcgetattr(fd, &config);
-
         // Set baudrate
-        cfsetispeed(&config, baudRate);
-        cfsetospeed(&config, baudRate);
+        cfsetispeed(&config, B57600);
+        cfsetospeed(&config, B57600);
+        printf("Port opened\n");
 }
 
 uint8_t rightShift1Byte(uint8_t n,int bits){
-    printf("%i\n",(n>>bits & 0xFF));
+    //printf("%i\n",(n>>bits & 0xFF));
     return (n>>bits & 0xFF);
 }
 
 uint8_t rightShift2Byte(uint16_t n,int bits){
-    printf("%i\n",(n>>bits & 0xFF));
+    //printf("%i\n",(n>>bits & 0xFF));
     return (n>>bits & 0xFF);
 }
 
 uint8_t rightShift4Byte(uint32_t n,int bits){
-    printf("%i\n",(n>>bits & 0xFF));
+    //printf("%i\n",(n>>bits & 0xFF));
     return (n>>bits & 0xFF);
 }
 
 
 uint8_t leftShift1Byte(uint8_t n,int bits){
-    printf("%i\n",(n<<bits));
+    //printf("%i\n",(n<<bits));
     return (n<<bits);
 }
 
 uint8_t leftShift2Byte(uint16_t n,int bits){
-    printf("%i\n",(n<<bits));
+    //printf("%i\n",(n<<bits));
     return (n<<bits);
 }
 
 uint8_t leftShift4Byte(uint32_t n,int bits){
-    printf("%i\n",(n<<bits));
+    //printf("%i\n",(n<<bits));
     return (n<<bits);
 }
 
@@ -85,11 +85,67 @@ uint8_t leftShift4Byte(uint32_t n,int bits){
 
 
 void writeData(uint8_t* data){
+     printf("writing %x \n",*data);
      write(fd,data,1);
 }
 
 
 
+void readPacket(){
+     int i = 0;
+     uint8_t packetType = 0;
+     uint8_t payload[100];
+     uint8_t recievedPacketData[100];
+     while(1){
+          uint8_t recievedFragment = 0;
+          read(fd,&recievedFragment,1);
+          if(recievedFragment!=0){
+              recievedPacketData[i] = recievedFragment;
+              printf("%x\n",recievedPacketData[i]);
+              i++;
+                   //Packet could be complete (minimal size)
+          if(i>=12){
+             if(recievedPacketData[0] != rightShift2Byte(FINGERPRINT_STARTCODE,8) || recievedPacketData[1]!= rightShift2Byte(FINGERPRINT_STARTCODE,0)){
+               printf("The received packet do not begin with a valid header!");
+               return;
+               }
+               int packetPayloadLength = leftShift1Byte(recievedPacketData[7],8);
+               packetPayloadLength = packetPayloadLength | leftShift1Byte(recievedPacketData[8], 0);
+               // Check if the packet is still fully received
+        //Condition: index counter < packet payload length + packet frame
+               if(i<packetPayloadLength+9){
+                  continue;
+               }
+               //At this point the packet should be fully received
+               
+               packetType = recievedPacketData[6];
+               
+               //Calculate checksum
+               //Checksum = Packet Type (1 byte) + packet length (2 bytes)+packet payload (n bytes)
+               uint16_t packetChecksum = packetType + recievedPacketData[7] + recievedPacketData[8];
+               int k = 0;
+               for(int j=9;j<(9+packetPayloadLength-2);j++){
+                    payload[k] = recievedPacketData[j];
+                    k++;
+                    packetChecksum += recievedPacketData[j];
+               }
+               
+               uint16_t recievedChecksum = leftShift1Byte(recievedPacketData[i-2],8);
+               recievedChecksum = recievedChecksum | leftShift1Byte(recievedPacketData[i-1],0);
+               
+               if(recievedChecksum != packetChecksum){
+                   printf("The recieved packet is corrutped\n");
+                   return;
+               }
+               
+               printf("reached");
+               return;
+          }
+          }else{
+             continue;
+          }
+     }
+}
 
 
 void writePacket(){
@@ -109,7 +165,7 @@ void writePacket(){
      uint8_t packetLengthOne = rightShift2Byte(packetLength,8);
      uint8_t packetLengthTwo = rightShift2Byte(packetLength,0);
      uint16_t packetChecksum = packetTypeBuffer + rightShift2Byte(packetLength,8) + rightShift2Byte(packetLength,0);
-      writeData(&startCodeHigh);
+     writeData(&startCodeHigh);
      writeData(&startCodeLow);
      writeData(&addressOne);
      writeData(&addressTwo);
@@ -126,6 +182,61 @@ void writePacket(){
      uint8_t checksumTwo = rightShift2Byte(packetChecksum,0);
      writeData(&checksumOne);
      writeData(&checksumTwo);
+     printf("all out\n");
+}
+
+
+int verifyPassword(){
+    payloadBuffer[0] = FINGERPRINT_VERIFYPASSWORD;
+    payloadBuffer[1] = rightShift4Byte(gPassword,24);
+    payloadBuffer[2] = rightShift4Byte(gPassword,16);
+    payloadBuffer[3] = rightShift4Byte(gPassword,8);
+    payloadBuffer[4] = rightShift4Byte(gPassword,0);
+    payloadSize = 5;
+    packetTypeBuffer = FINGERPRINT_COMMANDPACKET;
+    writePacket();
+    readPacket();
+}
+
+
+int setPassword(uint32_t newPassword){
+    if(newPassword < 0x00000000 || newPassword > 0xFFFFFFFF){
+         printf("The given password is invalid\n");
+         return 0;
+    }
+    packetTypeBuffer = FINGERPRINT_COMMANDPACKET;
+    payloadBuffer[0] = FINGERPRINT_SETPASSWORD;
+    payloadBuffer[1] = rightShift4Byte(newPassword,24);
+    payloadBuffer[2] = rightShift4Byte(newPassword,16);
+    payloadBuffer[3] = rightShift4Byte(newPassword,8);
+    payloadBuffer[4] = rightShift4Byte(newPassword,0);
+    payloadSize = 5;
+    writePacket();
+}
+
+
+int setAddress(uint32_t newAddress){
+    if(newAddress<0x00000000 || newAddress>0xFFFFFFFF){
+        printf("The given address is invalid\n");
+        return 0;
+    }
+    packetTypeBuffer = FINGERPRINT_COMMANDPACKET;
+    payloadBuffer[0] = FINGERPRINT_SETADDRESS,
+    payloadBuffer[1] = rightShift4Byte(newAddress,24);
+    payloadBuffer[2] = rightShift4Byte(newAddress,16);
+    payloadBuffer[3] = rightShift4Byte(newAddress,8);
+    payloadBuffer[4] = rightShift4Byte(newAddress,0);
+    payloadSize = 5;
+    writePacket();
+}
+
+
+void convertImage(uint8_t buffer){
+    packetTypeBuffer = FINGERPRINT_COMMANDPACKET;
+    payloadBuffer[0] = FINGERPRINT_CONVERTIMAGE;
+    payloadBuffer[1] = buffer;
+    payloadSize = 2;
+    writePacket();
 }
 
 
@@ -135,6 +246,7 @@ void readImage(){
      payloadSize = 1;
      payloadBuffer[0] = FINGERPRINT_READIMAGE;
      writePacket();
+     readPacket();
 }
 
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="70dp"
+    android:elevation="30dp"
+    android:layout_marginRight="10dp"
+    android:layout_marginLeft="10dp"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:cardBackgroundColor="#282828">
+    <TextView
+        android:layout_width="match_parent"
+        android:textAlignment="center"
+        android:layout_height="wrap_content"
+        android:id="@+id/userTile"
+        android:textColor="@android:color/white"
+        android:textSize="20dp"
+        android:layout_gravity="center"
+        />
+
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:layout_width="50dp"
+        android:layout_gravity="right|center_vertical"
+        android:layout_marginRight="10dp"
+        android:id="@+id/fingerprintButton"
+        android:background="@drawable/fingerprintbuttonback"
+        android:src="@drawable/baseline_fingerprint_24"
+        android:layout_height="50dp"/>
+</com.google.android.material.card.MaterialCardView>
