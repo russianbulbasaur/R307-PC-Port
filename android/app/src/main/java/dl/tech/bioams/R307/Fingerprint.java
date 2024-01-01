@@ -80,30 +80,24 @@ public class Fingerprint{
                 device = entry.getValue();
                 int deviceVID = device.getVendorId();
                 int devicePID = device.getProductId();
-
-//                if (deviceVID != 0x1d6b && (devicePID != 0x0001 && devicePID != 0x0002 && devicePID != 0x0003)) {
-                if (UsbSerialDevice.isSupported(device)) {
-                    // There is a device connected to our Android device. Try to open it as a Serial Port.
-                    requestUserPermission();
-                    break;
-                } else {
-                    connection = null;
-                    device = null;
-                }
             }
         } else {
             Log.d("error", "findSerialPortDevice() usbManager returned empty device list.");
         }
-        connection = usbManager.openDevice(device);
-        serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
-        if (serialPort != null) {
-            if (serialPort.syncOpen()) {
-                serialPort.setBaudRate(57600);
-                serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
-                serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
-                serialPort.setParity(UsbSerialInterface.PARITY_NONE);
-                serialPort.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF);
+        try {
+            connection = usbManager.openDevice(device);
+            serialPort = UsbSerialDevice.createUsbSerialDevice(device, connection);
+            if (serialPort != null) {
+                if (serialPort.syncOpen()) {
+                    serialPort.setBaudRate(57600);
+                    serialPort.setDataBits(UsbSerialInterface.DATA_BITS_8);
+                    serialPort.setStopBits(UsbSerialInterface.STOP_BITS_1);
+                    serialPort.setParity(UsbSerialInterface.PARITY_NONE);
+                    serialPort.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF);
+                }
             }
+        }catch (Exception e){
+            requestUserPermission();
         }
     }
 

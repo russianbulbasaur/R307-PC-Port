@@ -12,6 +12,7 @@ import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_STORETEMPLATE;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -91,32 +92,45 @@ class ProcedureThread extends Thread implements ProcedureCallback {
 
     public void next(HashMap<String,Object> data) throws IOException,InterruptedException{
         if(procedure.name.equals("enroll")){
+            byte subProcess = 0;
+            Bundle bundle = new Bundle();
+            Message message = new Message();
             switch (procedure.currentSubProcedure){
                 case 0:
                 case 3:
+                    subProcess = FINGERPRINT_READIMAGE;
                     log("Scanning....");
                     fingerprint.readImage(this);
                     break;
                 case 1:
+                    subProcess = FINGERPRINT_CONVERTIMAGE;
                     log("Conveting image...");
                     fingerprint.convertImage(FINGERPRINT_CHARBUFFER1,this);
                     break;
                 case 2:
+                    subProcess = FINGERPRINT_SEARCHTEMPLATE;
                     log("Searching template....");
                     fingerprint.searchTemplate(FINGERPRINT_CHARBUFFER1,0,-1,this);
                     break;
                 case 4:
+                    subProcess = FINGERPRINT_CONVERTIMAGE;
                     fingerprint.convertImage(FINGERPRINT_CHARBUFFER2,this);
                     break;
                 case 5:
+                    subProcess = FINGERPRINT_COMPARECHARACTERISTICS;
                     fingerprint.compareCharacteristics(this);
                     break;
                 case 6:
+                    subProcess = FINGERPRINT_CREATETEMPLATE;
                     fingerprint.createTemplate(this);
                     break;
                 case 7:
+                    subProcess = FINGERPRINT_STORETEMPLATE;
                     fingerprint.storeTemplate(-1,FINGERPRINT_CHARBUFFER1,this);
             }
+            bundle.putByte("subprocess",subProcess);
+            message.setData(bundle);
+            handler.sendMessage(message);
         }
     }
 
