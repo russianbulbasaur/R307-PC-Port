@@ -1,26 +1,23 @@
-package dl.tech.bioams;
+package dl.tech.bioams.ui.adminFragments;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.AppCompatImageButton;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.RecyclerView;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -35,15 +32,14 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
-import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
+import dl.tech.bioams.R;
 import dl.tech.bioams.R307.FingerprintInterface;
 import dl.tech.bioams.api.CustomVolleyError;
 import dl.tech.bioams.api.CustomVolleyInterface;
@@ -60,13 +56,17 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        prefs = getActivity().getSharedPreferences("app",Context.MODE_PRIVATE);
+        prefs = getContext().getSharedPreferences("app",Context.MODE_PRIVATE);
         url = prefs.getString("url","");
+        if(url.isEmpty()){
+            Toast.makeText(getContext(), "Url not set", Toast.LENGTH_SHORT).show();
+            return;
+        }
         try {
             user = loadUserObject();
             importUsers();
         } catch (Exception e){
-            Toast.makeText(getContext(),"Error deserializing",Toast.LENGTH_LONG).show();
+            Toast.makeText(getContext(),e.toString(),Toast.LENGTH_LONG).show();
         }
     }
 
@@ -105,18 +105,19 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
             };
             queue.add(request);
         }catch (Exception e){
-            Toast.makeText(getContext(), e.getMessage(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(), e.toString(), Toast.LENGTH_SHORT).show();
         }
     }
 
     User loadUserObject() throws IOException, ClassNotFoundException {
-        SharedPreferences prefs = getActivity().getPreferences(Context.MODE_PRIVATE);
+        SharedPreferences prefs = getActivity().getSharedPreferences("app",Context.MODE_PRIVATE);
         String serializedUser = prefs.getString("user","");
+        System.out.println("here : "+serializedUser);
         ByteArrayInputStream bis = new ByteArrayInputStream(Base64.getDecoder().decode(serializedUser.getBytes()));
         ObjectInputStream dis = new ObjectInputStream(bis);
         User user = (User) dis.readObject();
         dis.close();
-        return user;
+        return null;
     }
 
 
@@ -131,15 +132,6 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
         return v;
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        int count = getChildFragmentManager().getBackStackEntryCount();
-        while(count>0) {
-            getChildFragmentManager().popBackStack();
-            count--;
-        }
-    }
 
     @SuppressLint("UseCompatLoadingForDrawables")
     ArrayList<Map<String,String>> getUsers(){
@@ -209,15 +201,38 @@ class UserAdapter extends RecyclerView.Adapter<UserViewHolder>{
 class UserViewHolder extends RecyclerView.ViewHolder{
     TextView tv;
     AppCompatImageButton fingerprintButton;
+    Context context;
+    private TextView instruction;
     public UserViewHolder(@NonNull View itemView, Context context) {
         super(itemView);
+        this.context = context;
         tv = itemView.findViewById(R.id.userTile);
         fingerprintButton = itemView.findViewById(R.id.fingerprintButton);
         fingerprintButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                FingerprintInterface fingerprintInterface = new FingerprintInterface();
+                try {
+                    enrollFingerprint();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
         });
+    }
+
+
+    void enrollFingerprint() throws IOException {
+        makeDialog();
+        FingerprintInterface fingerprintInterface = new FingerprintInterface();
+        fingerprintInterface.enroll("",context,new Handler());
+    }
+
+    public void makeDialog(){
+        AlertDialog.Builder alertDialog = new AlertDialog.Builder(context);
+        LayoutInflater li = LayoutInflater.from(context);
+        View view = li.inflate(R.layout.fingerprint_scan,null);
+        instruction = view.findViewById(R.id.instruction);
+        alertDialog.setView(view);
+        alertDialog.create().show();
     }
 }

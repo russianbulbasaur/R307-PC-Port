@@ -1,4 +1,4 @@
-package dl.tech.bioams.ui.loginFragments;
+package dl.tech.bioams.ui.adminFragments;
 
 import android.os.Bundle;
 

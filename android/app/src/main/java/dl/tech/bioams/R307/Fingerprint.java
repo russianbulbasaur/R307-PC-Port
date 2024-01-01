@@ -52,17 +52,17 @@ public class Fingerprint{
     byte[] gPassword = {0x00,0x00,0x00,0x00};
     int fd = 0;
     Queue<Packet> packetQueue;
-    private Activity activity;
+    private Context con;
     private Thread subThread;
     private UsbManager usbManager;
     private UsbDeviceConnection connection;
     private UsbDevice device;
     private UsbSerialDevice serialPort;
-    public void init(Activity activity) throws IOException {
+    public void init(Context context) throws IOException {
         // Find all available drivers from attached devices.
         // This snippet will try to open the first encountered usb device connected, excluding usb root hubs
-        this.activity = activity;
-        usbManager = (UsbManager) activity.getSystemService(Context.USB_SERVICE);
+        this.con = context;
+        usbManager = (UsbManager) con.getSystemService(Context.USB_SERVICE);
         HashMap<String, UsbDevice> usbDevices = usbManager.getDeviceList();
         if (!usbDevices.isEmpty()) {
 
@@ -84,7 +84,7 @@ public class Fingerprint{
 //                if (deviceVID != 0x1d6b && (devicePID != 0x0001 && devicePID != 0x0002 && devicePID != 0x0003)) {
                 if (UsbSerialDevice.isSupported(device)) {
                     // There is a device connected to our Android device. Try to open it as a Serial Port.
-                    //requestUserPermission();
+                    requestUserPermission();
                     break;
                 } else {
                     connection = null;

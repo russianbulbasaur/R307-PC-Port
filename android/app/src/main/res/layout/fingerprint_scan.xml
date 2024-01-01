@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:layout_height="match_parent">
+    <com.airbnb.lottie.LottieAnimationView
+        android:layout_width="match_parent"
+        app:lottie_fileName="fingerprintscan"
+        app:lottie_repeatMode="restart"
+        app:lottie_repeatCount="1000"
+        app:lottie_autoPlay="true"
+        android:layout_height="match_parent">
+
+    </com.airbnb.lottie.LottieAnimationView>
+    <TextView
+        android:layout_width="wrap_content"
+        android:id="@+id/instruction"
+        android:text="Please put your finger on the scanner"
+        android:layout_height="wrap_content"/>
+</LinearLayout>

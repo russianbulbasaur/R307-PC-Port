@@ -10,20 +10,27 @@ import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_SEARCHTEMPLATE;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_STORETEMPLATE;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.text.Layout;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
 import java.util.HashMap;
 
+import dl.tech.bioams.R;
 import dl.tech.bioams.models.Procedure;
 import dl.tech.bioams.models.ProcedureCallback;
 
 public class FingerprintInterface {
-    public void enroll(String userId,Activity activity,Handler callbackHandler) throws IOException {
+    public void enroll(String userId,Context context,Handler callbackHandler) throws IOException {
         Procedure enrollProcedure = new Procedure();
         enrollProcedure.currentSubProcedure = 0;
         enrollProcedure.subProcedures = new byte[]{
@@ -38,7 +45,7 @@ public class FingerprintInterface {
         };
         enrollProcedure.name = "enroll";
         //Thread
-        ProcedureThread thread = new ProcedureThread(enrollProcedure,callbackHandler,activity);
+        ProcedureThread thread = new ProcedureThread(enrollProcedure,callbackHandler,context);
         thread.start();
     }
 
@@ -62,11 +69,11 @@ class ProcedureThread extends Thread implements ProcedureCallback {
     Procedure procedure;
     Handler handler;
     Fingerprint fingerprint;
-    ProcedureThread(Procedure procedure, Handler h, Activity activity) throws IOException {
+    ProcedureThread(Procedure procedure, Handler h, Context context) throws IOException {
         this.procedure = procedure;
         this.handler = h;
         fingerprint = new Fingerprint();
-        fingerprint.init(activity);
+        fingerprint.init(context);
     }
 
     @Override

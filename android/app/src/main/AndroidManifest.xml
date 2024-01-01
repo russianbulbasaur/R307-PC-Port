@@ -31,7 +31,10 @@
             android:label="@string/title_activity_user_mode"
             android:theme="@style/Theme.BioAMS.Fullscreen" />
         <activity
-            android:name=".Users"
+            android:name=".ui.adminFragments.Users"
+            android:exported="false" />
+        <activity
+            android:name=".AdminPanel"
             android:exported="false" />
         <activity
             android:name=".Login"

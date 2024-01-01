@@ -1,9 +1,8 @@
-package dl.tech.bioams.ui.loginFragments;
+package dl.tech.bioams.ui.adminFragments;
 
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
-import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
@@ -20,26 +19,19 @@ import android.widget.GridView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Objects;
 
 import dl.tech.bioams.R;
 import dl.tech.bioams.UserMode;
-import dl.tech.bioams.Users;
-import dl.tech.bioams.db.DatabaseHelper;
 
-/**
- * A simple {@link Fragment} subclass.
- * Use the {@link AdminPanel#newInstance} factory method to
- * create an instance of this fragment.
- */
-public class AdminPanel extends Fragment {
+public class AdminOptions extends Fragment {
 
 
-    public AdminPanel() {
+    public AdminOptions() {
         // Required empty public constructor
     }
-
-    public static AdminPanel newInstance() {
-        return new AdminPanel();
+    public static AdminOptions newInstance() {
+        return new AdminOptions();
     }
 
     @Override
@@ -50,6 +42,7 @@ public class AdminPanel extends Fragment {
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
+        // Inflate the layout for this fragment
         int layout;
         Configuration config = getResources().getConfiguration();
         if(config.orientation == Configuration.ORIENTATION_LANDSCAPE){
@@ -57,7 +50,6 @@ public class AdminPanel extends Fragment {
         }else{
             layout = R.layout.fragment_admin_panel;
         }
-        // Inflate the layout for this fragment
         View view = inflater.inflate(layout, container, false);
         GridView options = view.findViewById(R.id.options);
         ArrayList<String> arr = new ArrayList<>();
@@ -65,21 +57,21 @@ public class AdminPanel extends Fragment {
         arr.add("Register User");
         arr.add("Delete User");
         arr.add("User Mode");
-        OptionsAdapter adapter = new OptionsAdapter(getContext(),0,arr,getParentFragmentManager(),getActivity());
+        OptionsAdapter adapter = new OptionsAdapter(Objects.requireNonNull(getActivity()),0,arr,getActivity().getSupportFragmentManager(),getActivity());
         options.setAdapter(adapter);
         return view;
     }
 }
 
 
-class OptionsAdapter extends ArrayAdapter<String>{
+class OptionsAdapter extends ArrayAdapter<String> {
 
     private ArrayList<String> options;
     private FragmentManager fm;
 
     private FragmentActivity parentActivity;
 
-    public OptionsAdapter(@NonNull Context context, int resource,ArrayList<String> options,FragmentManager parsedFM,
+    public OptionsAdapter(@NonNull Context context, int resource, ArrayList<String> options, FragmentManager parsedFM,
                           FragmentActivity parsedActivity) {
         super(context, resource);
         this.fm = parsedFM;
@@ -88,27 +80,25 @@ class OptionsAdapter extends ArrayAdapter<String>{
     }
 
 
-    void importUsers(){
-        fm.beginTransaction().add(R.id.container,new Users()).addToBackStack("users").commit();
+    void importUsers() {
+        fm.beginTransaction().add(R.id.container, new Users()).addToBackStack("users").commit();
     }
 
 
-    void switchToUser(){
+    void switchToUser() {
         Intent intent = new Intent(getContext(), UserMode.class);
         getContext().startActivity(intent);
         parentActivity.finish();
     }
 
 
-    void registerUser(){
-        fm.beginTransaction().add(R.id.container,new RegisterUser()).commit();
+    void registerUser() {
+        fm.beginTransaction().add(R.id.container, new RegisterUser()).addToBackStack("register").commit();
     }
 
 
-
-
-    void titleClicked(int position){
-        switch (position){
+    void titleClicked(int position) {
+        switch (position) {
             case 0:
                 importUsers();
                 break;
@@ -127,9 +117,9 @@ class OptionsAdapter extends ArrayAdapter<String>{
     @Override
     public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
         OptionsHolder holder;
-        if(convertView==null){
+        if (convertView == null) {
             LayoutInflater li = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-            convertView = li.inflate(R.layout.optiontile,parent,false);
+            convertView = li.inflate(R.layout.optiontile, parent, false);
             holder = new OptionsHolder();
             holder.listener = new View.OnClickListener() {
                 @Override
@@ -140,7 +130,7 @@ class OptionsAdapter extends ArrayAdapter<String>{
             holder.option = options.get(position);
             holder.optionsText = convertView.findViewById(R.id.optionText);
             convertView.setTag(holder);
-        }else{
+        } else {
             holder = (OptionsHolder) convertView.getTag();
         }
         holder.optionsText.setText(holder.option);
@@ -154,7 +144,7 @@ class OptionsAdapter extends ArrayAdapter<String>{
     }
 }
 
-class OptionsHolder{
+class OptionsHolder {
     String option;
     TextView optionsText;
     View.OnClickListener listener;

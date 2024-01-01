@@ -1,26 +1,19 @@
 package dl.tech.bioams.ui.loginFragments;
 
 
-import static dl.tech.bioams.R307.DataCodes.*;
-
 import androidx.appcompat.widget.AppCompatButton;
 import androidx.appcompat.widget.LinearLayoutCompat;
 
-import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
-import android.hardware.usb.UsbDeviceConnection;
-import android.hardware.usb.UsbManager;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
-import android.os.Handler;
-import android.os.Looper;
-import android.os.Message;
 import android.text.Editable;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -37,25 +30,18 @@ import com.google.android.material.textfield.TextInputEditText;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.ObjectOutputStream;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
+import dl.tech.bioams.AdminPanel;
 import dl.tech.bioams.R;
-import dl.tech.bioams.R307.Fingerprint;
 import dl.tech.bioams.api.CustomVolleyError;
 import dl.tech.bioams.api.CustomVolleyInterface;
 import dl.tech.bioams.api.CustomVolleyRequest;
-import dl.tech.bioams.models.Packet;
-import dl.tech.bioams.models.Procedure;
-import dl.tech.bioams.models.ProcedureCallback;
 import dl.tech.bioams.models.User;
 
 public class LoginFragment extends Fragment implements View.OnClickListener, CustomVolleyInterface {
@@ -122,6 +108,7 @@ public class LoginFragment extends Fragment implements View.OnClickListener, Cus
 
     @Override
     public void onClick(View view) {
+        System.out.println("here");
         switch (view.getId()){
             case R.id.workspaceButton:
                 String workspaceUrl = workspaceTextField.getEditableText().toString().trim();
@@ -132,6 +119,7 @@ public class LoginFragment extends Fragment implements View.OnClickListener, Cus
                 pingWorkspace(workspaceUrl);
                 break;
             case R.id.loginButton:
+                System.out.println("here");
                 preLogin();
                 break;
         }
@@ -175,7 +163,10 @@ public class LoginFragment extends Fragment implements View.OnClickListener, Cus
                 public void onResponse(Bundle response) {
                     SharedPreferences.Editor prefsEditor = prefs.edit();
                     prefsEditor.putString("url",workspace);
+                    prefsEditor.apply();
+                    url = workspace;
                     loginCard.setVisibility(View.VISIBLE);
+                    loginButton.setOnClickListener(LoginFragment.this);
                     workspaceCard.setVisibility(View.INVISIBLE);
                 }
             });
@@ -187,7 +178,9 @@ public class LoginFragment extends Fragment implements View.OnClickListener, Cus
     }
 
     void login(String requestUrl){
+        System.out.println("Sending login request");
         if(notInQueue(requestUrl)) {
+            System.out.println("Sending login request");
             customVolleyError = new CustomVolleyError(requestUrl);
             customVolleyError.volleyInterface = this;
             CustomVolleyRequest loginRequest = new CustomVolleyRequest(Request.Method.POST, requestUrl, customVolleyError, new Response.Listener<Bundle>() {
@@ -223,7 +216,8 @@ public class LoginFragment extends Fragment implements View.OnClickListener, Cus
                 SharedPreferences.Editor prefsEditor = prefs.edit();
                 prefsEditor.putString("user",serializeObject(user));
                 prefsEditor.apply();
-                getParentFragmentManager().beginTransaction().replace(R.id.container,AdminPanel.newInstance()).commitNow();
+                Intent intent = new Intent(getContext(), AdminPanel.class);
+                startActivity(intent);
             }
         }catch (Exception e){
             Toast.makeText(getContext(), "Parsing error", Toast.LENGTH_SHORT).show();
