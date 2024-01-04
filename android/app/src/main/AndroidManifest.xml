@@ -59,6 +59,8 @@
             android:exported="true"
             android:hardwareAccelerated="true" />
 
+        <service android:name=".R307.FingerprintService" />
+
         <uses-native-library
             android:name="libOpenCL.so"
             android:required="false" />

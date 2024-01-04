@@ -13,7 +13,6 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
-
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -33,6 +32,7 @@ android {
 }
 
 dependencies {
+    implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
     implementation 'com.android.volley:volley:1.2.1'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'

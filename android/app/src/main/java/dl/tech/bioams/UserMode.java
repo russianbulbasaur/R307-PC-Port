@@ -1,39 +1,83 @@
 package dl.tech.bioams;
 
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_CHARBUFFER1;
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_CONVERTIMAGE;
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_READIMAGE;
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_SEARCHTEMPLATE;
+
 import android.annotation.SuppressLint;
-
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
-
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbDeviceConnection;
+import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.Message;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.textfield.TextInputEditText;
+import com.hoho.android.usbserial.driver.UsbSerialDriver;
+import com.hoho.android.usbserial.driver.UsbSerialPort;
+import com.hoho.android.usbserial.driver.UsbSerialProber;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.Objects;
 
+import dl.tech.bioams.R307.Constants;
+import dl.tech.bioams.R307.CustomProber;
+import dl.tech.bioams.R307.FingerprintService;
+import dl.tech.bioams.R307.SerialListener;
+import dl.tech.bioams.R307.SerialSocket;
 import dl.tech.bioams.databinding.ActivityUserModeBinding;
-import dl.tech.bioams.FR.FacialRecognition;
+import dl.tech.bioams.db.DatabaseHelper;
+import dl.tech.bioams.models.Procedure;
 import dl.tech.bioams.models.User;
+import dl.tech.bioams.ui.adminFragments.subprocessCallBack;
 
 /**
  * An example full-screen activity that shows and hides the system UI (i.e.
  * status bar and navigation/system bar) with user interaction.
  */
-public class UserMode extends AppCompatActivity implements View.OnClickListener{
+public class UserMode extends AppCompatActivity implements View.OnClickListener, ServiceConnection, SerialListener, subprocessCallBack {
     private View mContentView;
     private ActivityUserModeBinding binding;
+
+    private DatabaseHelper helper;
+
+    private BroadcastReceiver usbPermissionReciever;
+
+    private enum Connected { False, Pending, True }
+    private UsbSerialPort usbSerialPort;
+    private Connected connected = Connected.False;
+    private FingerprintService service;
+    private Procedure procedure;
+    private android.app.AlertDialog.Builder alertDialogBuilder;
+    private android.app.AlertDialog alertDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +91,23 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener{
         SharedPreferences.Editor prefsEditor = prefs.edit();
         prefsEditor.putInt("usermode",1);
         prefsEditor.apply();
+        startService(new Intent(this, FingerprintService.class));
+        bindService(new Intent(this, FingerprintService.class), this, Context.BIND_AUTO_CREATE);
+        init();
         setupClickListeners();
+    }
+
+    void init(){
+        usbPermissionReciever = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if(Constants.INTENT_ACTION_GRANT_USB.equals(intent.getAction())) {
+                    Boolean granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false);
+                    connect(granted);
+                }
+            }
+        };
+        helper = new DatabaseHelper(this,"ams.db");
     }
 
     void setupClickListeners(){
@@ -60,9 +120,8 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener{
     }
 
     void checkin(){
-
-//        Intent intent = new Intent(this, FacialRecognition.class);
-//        startActivity(intent);
+        log("in checkin");
+        search();
     }
 
     void checkout(){
@@ -127,4 +186,260 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener{
                 break;
         }
     }
+
+
+    @Override
+    public void onDestroy() {
+        if (connected != Connected.False)
+            disconnect();
+        stopService(new Intent(this, FingerprintService.class));
+        super.onDestroy();
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        if(service != null)
+            service.attach(this);
+        else
+            startService(new Intent(this, FingerprintService.class)); // prevents service destroy on unbind from recreated activity caused by orientation change
+    }
+
+    @Override
+    public void onStop() {
+        if(service != null && !isChangingConfigurations())
+            service.detach();
+        super.onStop();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        registerReceiver(usbPermissionReciever, new IntentFilter(Constants.INTENT_ACTION_GRANT_USB));
+    }
+
+    @Override
+    public void onPause() {
+        unregisterReceiver(usbPermissionReciever);
+        super.onPause();
+    }
+
+    @Override
+    public void onServiceConnected(ComponentName name, IBinder binder) {
+        Toast.makeText(this, "connected", Toast.LENGTH_SHORT).show();
+        service = ((FingerprintService.FingerprintServiceBinder)binder).getService();
+        service.attach(this);
+        connect(null);
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName name) {
+        service = null;
+    }
+
+
+    void searchUserInDatabase(int position){
+        SQLiteDatabase sqLiteDatabase = helper.getReadableDatabase();
+        Cursor cursor = sqLiteDatabase.query("users",new String[]{"name","user_id"},"fingerprint_id=?",new String[]{String.valueOf(position)},null,null,null);
+        cursor.moveToFirst();
+        if(cursor.getCount()==0){
+            Toast.makeText(this, "No users", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "Hi "+cursor.getString(0), Toast.LENGTH_SHORT).show();
+    }
+
+    public void search()  {
+        procedure = new Procedure();
+        procedure.handler = new Handler(Looper.getMainLooper()){
+            @Override
+            public void handleMessage(@NonNull Message msg) {
+                super.handleMessage(msg);
+                if(msg.getData().getString("msg").equals("done")) {
+                    if(msg.getData().getInt("position")==-1){
+                        return;
+                    }
+                    searchUserInDatabase(msg.getData().getInt("position"));
+                }
+            }
+        };
+        procedure.currentSubProcedure = 0;
+        procedure.subProcedures = new byte[]{
+                FINGERPRINT_READIMAGE,
+                FINGERPRINT_CONVERTIMAGE,
+                FINGERPRINT_SEARCHTEMPLATE
+        };
+        procedure.name = "search";
+        process(this);
+    }
+
+    @Override
+    public void subprocessCallBack(Bundle bundle) {
+        if(Objects.equals(procedure.name, "search") && procedure.currentSubProcedure==2){
+            updateSubprocedure("done",bundle.getShort("position"));
+        }
+        procedure.currentSubProcedure += 1;
+        process(this);
+    }
+
+    public void process(subprocessCallBack callBack){
+        log("in process");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Bundle bundle = null;
+                try {
+                    switch (procedure.currentSubProcedure) {
+                        case 0:
+                            status("Scanning....");
+                            updateSubprocedure("Please put your finger on the scanner",0);
+                            bundle = service.readImage();
+                            callBack.subprocessCallBack(bundle);
+                            break;
+                        case 1:
+                            status("Converting...");
+                            updateSubprocedure("Please wait",0);
+                            bundle = service.convertImage(FINGERPRINT_CHARBUFFER1);
+                            callBack.subprocessCallBack(bundle);
+                            break;
+                        case 2:
+                            status("Searching....");
+                            bundle = service.searchTemplate(FINGERPRINT_CHARBUFFER1,0,-1,1000);
+                            if(bundle.getInt("found")==0){
+                                bundle.putInt("position",-1);
+                            }
+                            callBack.subprocessCallBack(bundle);
+                            break;
+                    }
+                }catch (Exception e){
+                    System.out.println(e.toString());
+                }
+            }
+        }).start();
+    }
+
+
+
+    private void updateSubprocedure(String msg,int position) {
+        Message message = new Message();
+        Bundle bundle = new Bundle();
+        bundle.putString("msg",msg);
+        message.setData(bundle);
+        procedure.handler.sendMessage(message);
+        log("\n\n"+msg+"\n\n");
+    }
+
+
+    void log(String s){
+        System.out.println(s);
+    }
+
+
+
+
+    private void connect(Boolean permissionGranted) {
+        UsbDevice device = null;
+        UsbManager usbManager;
+        usbManager = (UsbManager) this.getSystemService(Context.USB_SERVICE);
+        for(UsbDevice v : usbManager.getDeviceList().values())
+            device = v;
+        if(device == null) {
+            status("connection failed: device not found");
+            return;
+        }
+        UsbSerialDriver driver = UsbSerialProber.getDefaultProber().probeDevice(device);
+        if(driver == null) {
+            driver = CustomProber.getCustomProber().probeDevice(device);
+        }
+        if(driver == null) {
+            status("connection failed: no driver for device");
+            return;
+        }
+        usbSerialPort = driver.getPorts().get(0);
+        UsbDeviceConnection usbConnection = usbManager.openDevice(driver.getDevice());
+        if(usbConnection == null && permissionGranted == null && !usbManager.hasPermission(driver.getDevice())) {
+            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_MUTABLE : 0;
+            PendingIntent usbPermissionIntent = PendingIntent.getBroadcast(this, 0, new Intent(Constants.INTENT_ACTION_GRANT_USB), flags);
+            usbManager.requestPermission(driver.getDevice(), usbPermissionIntent);
+            return;
+        }
+        if(usbConnection == null) {
+            if (!usbManager.hasPermission(driver.getDevice()))
+                status("connection failed: permission denied");
+            else
+                status("connection failed: open failed");
+            return;
+        }
+
+        connected = Connected.Pending;
+        try {
+            usbSerialPort.open(usbConnection);
+            try {
+                usbSerialPort.setParameters(57600, UsbSerialPort.DATABITS_8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+            } catch (UnsupportedOperationException e) {
+                status("Setting serial parameters failed: " + e.getMessage());
+            }
+            SerialSocket socket = new SerialSocket(this.getApplicationContext(), usbConnection, usbSerialPort);
+            service.connect(socket);
+            // usb connect is not asynchronous. connect-success and connect-error are returned immediately from socket.connect
+            // for consistency to bluetooth/bluetooth-LE app use same SerialListener and SerialService classes
+            onSerialConnect();
+        } catch (Exception e) {
+            onSerialConnectError(e);
+        }
+    }
+
+    private void disconnect() {
+        connected = Connected.False;
+        if(service!=null)
+            service.disconnect();
+        usbSerialPort = null;
+    }
+
+
+    private void receive(ArrayDeque<byte[]> datas) {
+        for (byte[] data : datas) {
+            for(byte b:data){
+                service.response[service.i] = b;
+                service.i++;
+            }
+        }
+    }
+
+    void status(String str) {
+        System.out.println(str);
+    }
+
+    /*
+     * SerialListener
+     */
+    @Override
+    public void onSerialConnect() {
+        status("connected");
+        connected = Connected.True;
+    }
+
+    @Override
+    public void onSerialConnectError(Exception e) {
+        status("connection failed: " + e.getMessage());
+        disconnect();
+    }
+
+    @Override
+    public void onSerialRead(byte[] data) {
+        ArrayDeque<byte[]> datas = new ArrayDeque<>();
+        datas.add(data);
+        receive(datas);
+    }
+
+    public void onSerialRead(ArrayDeque<byte[]> datas) {
+        receive(datas);
+    }
+
+    @Override
+    public void onSerialIoError(Exception e) {
+        status("connection lost: " + e.getMessage());
+        disconnect();
+    }
+
 }
