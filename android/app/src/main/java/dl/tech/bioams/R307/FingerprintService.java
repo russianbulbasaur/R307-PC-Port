@@ -7,6 +7,7 @@ import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_COMMANDPACKET;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_COMPARECHARACTERISTICS;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_CONVERTIMAGE;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_CREATETEMPLATE;
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_ERROR_CHARACTERISTICSMISMATCH;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_ERROR_COMMUNICATION;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_ERROR_NOTEMPLATEFOUND;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_ERROR_NOTMATCHING;
@@ -368,10 +369,15 @@ public class FingerprintService extends Service implements SerialListener {
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_CONVERTIMAGE;
         payload[1] = charBufferNumber;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -404,11 +410,16 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[2];
         payload[0] = FINGERPRINT_TEMPLATEINDEX;
         payload[1] = page;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             System.out.println("sent : "+TextUtil.toHexString(createPacket(FINGERPRINT_COMMANDPACKET, payload)));
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println("Response : "+TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -451,11 +462,16 @@ public class FingerprintService extends Service implements SerialListener {
         payload[3] = rightShift(positionStart,0);
         payload[4] = rightShift(templatesCount,8);
         payload[5] = rightShift(templatesCount,0);
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             System.out.println("Test sent : "+TextUtil.toHexString(createPacket(FINGERPRINT_COMMANDPACKET, payload)));
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -466,11 +482,11 @@ public class FingerprintService extends Service implements SerialListener {
                     short positionNumber = packet.packetPayload[1];
                     positionNumber <<= 8;
                     positionNumber |= packet.packetPayload[2];
-                    bundle.putShort("position",positionNumber);
+                    bundle.putInt("position",Integer.parseInt(Short.toString(positionNumber)));
                     short accuracy = packet.packetPayload[3];
                     accuracy <<= 8;
                     accuracy |= packet.packetPayload[4];
-                    bundle.putShort("accuracy",accuracy);
+                    bundle.putInt("accuracy",Integer.parseInt(Short.toString(accuracy)));
                     System.out.println("Found template at "+positionNumber);
                     bundle.putBoolean("status",true);
                     bundle.putInt("found",1);
@@ -492,10 +508,15 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[1];
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_COMPARECHARACTERISTICS;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -523,10 +544,15 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[1];
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_CREATETEMPLATE;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -536,6 +562,10 @@ public class FingerprintService extends Service implements SerialListener {
                 if(packet.packetPayload[0] == FINGERPRINT_OK){
                     System.out.println("Template created\n");
                     bundle.putBoolean("status",true);
+                    return bundle;
+                }
+                else if(packet.packetPayload[0]==FINGERPRINT_ERROR_CHARACTERISTICSMISMATCH){
+                    bundle.putBoolean("status",false);
                     return bundle;
                 }
             }
@@ -548,10 +578,15 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[1];
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_GETSYSTEMPARAMETERS;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -579,10 +614,15 @@ public class FingerprintService extends Service implements SerialListener {
             System.out.println("Invalid position number");
             return bundle;
         }
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -627,15 +667,17 @@ public class FingerprintService extends Service implements SerialListener {
             checksum += response[j];
             System.out.println(checksum);
         }
-        System.out.println("Calculated  : "+checksum);
         short receivedChecksum = response[i-2];
         receivedChecksum <<= 8;
-        receivedChecksum |= response[i-1];
+        receivedChecksum &= 0xff00;
+        receivedChecksum |= (response[i-1] & 0x00ff);
+        int convertedChecksum = (checksum & 0xffff);
+        System.out.println("Calculated  : "+convertedChecksum);
         System.out.println("Received : "+receivedChecksum);
-        if(checksum != receivedChecksum){
-            System.out.println("Checksum failure");
-            return null;
-        }
+//        if(convertedChecksum != receivedChecksum){
+//            System.out.println("Checksum failure");
+//            return null;
+//        }
         packet = new Packet();
         packet.packetPayload = payload;
         packet.packetType = response[6];
@@ -648,10 +690,11 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[1];
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_READIMAGE;
+        int failure = 0;
         while(true) {
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(250);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {
@@ -673,10 +716,15 @@ public class FingerprintService extends Service implements SerialListener {
         byte[] payload = new byte[1];
         Bundle bundle = new Bundle();
         payload[0] = FINGERPRINT_TEMPLATECOUNT;
+        int failure = 0;
         while(true) {
+            failure++;
+            if(failure>10){
+                Thread.sleep(5000);
+            }
             i = 0;
             write(createPacket(FINGERPRINT_COMMANDPACKET, payload));
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             System.out.println(TextUtil.toHexString(response));
             Packet packet = readPacket(response);
             if(packet!=null) {

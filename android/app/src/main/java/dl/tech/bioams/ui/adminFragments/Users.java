@@ -8,16 +8,15 @@ import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_CREATETEMPLATE;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_READIMAGE;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_SEARCHTEMPLATE;
 import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_STORETEMPLATE;
+import static dl.tech.bioams.R307.DataCodes.FINGERPRINT_TEMPLATECOUNT;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
@@ -34,9 +33,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
-import android.text.Spannable;
-import android.text.SpannableStringBuilder;
-import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -46,6 +42,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.AppCompatImageButton;
 import androidx.appcompat.widget.SearchView;
 import androidx.fragment.app.Fragment;
@@ -56,7 +53,6 @@ import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.toolbox.Volley;
-import com.hoho.android.usbserial.driver.SerialTimeoutException;
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
@@ -73,7 +69,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 
 import dl.tech.bioams.R;
 import dl.tech.bioams.R307.Constants;
@@ -81,7 +76,6 @@ import dl.tech.bioams.R307.CustomProber;
 import dl.tech.bioams.R307.FingerprintService;
 import dl.tech.bioams.R307.SerialListener;
 import dl.tech.bioams.R307.SerialSocket;
-import dl.tech.bioams.R307.TextUtil;
 import dl.tech.bioams.api.CustomVolleyError;
 import dl.tech.bioams.api.CustomVolleyInterface;
 import dl.tech.bioams.api.CustomVolleyRequest;
@@ -90,7 +84,7 @@ import dl.tech.bioams.models.AMSUser;
 import dl.tech.bioams.models.Procedure;
 import dl.tech.bioams.models.User;
 
-public class Users extends Fragment implements Response.Listener<Bundle>, CustomVolleyInterface, ServiceConnection, SerialListener,RegisterFingerprint,subprocessCallBack {
+public class Users extends Fragment implements Response.Listener<Bundle>, CustomVolleyInterface, ServiceConnection, SerialListener,RegisterFingerprint {
     private String url;
     private SharedPreferences prefs;
     private User user;
@@ -108,6 +102,8 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
     private TextView instruction;
     private AlertDialog.Builder alertDialogBuilder;
     private AlertDialog alertDialog;
+
+    private Thread processThread;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -281,6 +277,7 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
         while(!cursor.isAfterLast()){
             user = new AMSUser(cursor.getString(0),cursor.getString(1),cursor.getInt(2));
             users.add(user);
+            System.out.println(user.fingerprint);
             cursor.moveToNext();
         }
         cursor.close();
@@ -292,18 +289,24 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
         SQLiteDatabase database = helper.getWritableDatabase();
         ContentValues contentValues = new ContentValues();
         contentValues.put("fingerprint_id",user.fingerprint);
+        Toast.makeText(getContext(), "Registered "+user.name, Toast.LENGTH_SHORT).show();
         database.update("users",contentValues,"user_id=?",new String[]{user.userid});
         database.close();
     }
 
     void addUserToDatabase(AMSUser user){
-        SQLiteDatabase database = helper.getWritableDatabase();
-        ContentValues contentValues = new ContentValues();
-        contentValues.put("user_id",user.userid);
-        contentValues.put("name",user.name);
-        contentValues.put("fingerprint_id",user.fingerprint);
-        database.insert("users",null,contentValues);
-        database.close();
+        SQLiteDatabase database = helper.getReadableDatabase();
+        Cursor cursor = database.query("users",new String[]{"name","user_id"},"user_id=?",new String[]{user.userid},null,null,null);
+        if(cursor.getCount()==0) {
+            database = helper.getWritableDatabase();
+            ContentValues contentValues = new ContentValues();
+            contentValues.put("user_id", user.userid);
+            contentValues.put("name", user.name);
+            contentValues.put("fingerprint_id", user.fingerprint);
+            database.insert("users", null, contentValues);
+            database.close();
+        }
+        cursor.close();
     }
 
     @Override
@@ -351,35 +354,68 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
         }
     }
 
+
+    void dismissDialog(){
+        if(alertDialog!=null) {
+            alertDialog.dismiss();
+            alertDialog.cancel();
+        }
+    }
+
+    void makeDialog(View view,boolean cancelable){
+        alertDialogBuilder = new AlertDialog.Builder(getContext());
+        alertDialogBuilder.setView(view);
+        alertDialogBuilder.setCancelable(cancelable);
+        alertDialog = alertDialogBuilder.create();
+        alertDialog.show();
+    }
+
     public void enroll(AMSUser user)  {
         procedure = new Procedure();
         procedure.handler = new Handler(Looper.getMainLooper()){
             @Override
             public void handleMessage(@NonNull Message msg) {
                 super.handleMessage(msg);
-                if(msg.getData().getString("msg").equals("done")) {
-                    user.fingerprint = templateCount;
-                    updateUserInDatabase(user);
-                    alertDialog.cancel();
-                    alertDialog.dismiss();
-                    alertDialogBuilder = new AlertDialog.Builder(getContext());
-                    alertDialogBuilder.setCancelable(false);
-                    alertDialogBuilder.setMessage("Successfully enrolled " + user.name + " #" + user.fingerprint);
-                    alertDialogBuilder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialogInterface, int i) {
-                            dialogInterface.cancel();
-                            dialogInterface.dismiss();
+                Bundle data = msg.getData();
+                switch (data.getByte("nextSubprocess")){
+                    case FINGERPRINT_READIMAGE:
+                        dismissDialog();
+                        if(data.keySet().contains("found") && data.getInt("found")==1){
+                            Toast.makeText(getContext(), "Fingerprint already registered.", Toast.LENGTH_SHORT).show();
+                            processThread.interrupt();
+                        }else{
+                            makeDialog(getLayoutInflater().inflate(R.layout.place_finger,null),false);
                         }
-                    });
-                    alertDialogBuilder.create().show();
-                    return;
+                        break;
+                    case FINGERPRINT_CONVERTIMAGE:
+                        dismissDialog();
+                        makeDialog(getLayoutInflater().inflate(R.layout.registering,null),false);
+                        break;
+                    case FINGERPRINT_CREATETEMPLATE:
+                        if(data.getInt("match")==0){
+                            dismissDialog();
+                            Toast.makeText(getContext(), "The trials did not match. Please retry.", Toast.LENGTH_SHORT).show();
+                            processThread.interrupt();
+                        }
+                        break;
+                    case FINGERPRINT_STORETEMPLATE:
+                        if(!data.getBoolean("status")){
+                            Toast.makeText(getContext(), "Fingerprint mismatch", Toast.LENGTH_SHORT).show();
+                            processThread.interrupt();
+                        }
+                        break;
+                    case (byte)0xff:
+                        dismissDialog();
+                        if(!data.keySet().contains("interrupted")) {
+                            user.fingerprint = templateCount;
+                            updateUserInDatabase(user);
+                        }
+                        break;
                 }
-                instruction.setText(msg.getData().getString("msg"));
             }
         };
-        procedure.currentSubProcedure = -1;
         procedure.subProcedures = new byte[]{
+                FINGERPRINT_TEMPLATECOUNT,
                 FINGERPRINT_READIMAGE,
                 FINGERPRINT_CONVERTIMAGE,
                 FINGERPRINT_SEARCHTEMPLATE,
@@ -389,95 +425,78 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
                 FINGERPRINT_CREATETEMPLATE,
                 FINGERPRINT_STORETEMPLATE
         };
+        procedure.currentSubProcedure = procedure.subProcedures[0];
         procedure.name = "enroll";
-        process(this);
+        process();
     }
 
-    @Override
-    public void subprocessCallBack(Bundle bundle) {
-        if(Objects.equals(procedure.name, "enroll") && procedure.currentSubProcedure==7){
-            updateSubprocedure("done");
-        }
-        procedure.currentSubProcedure += 1;
-        process(this);
-    }
 
-    public void process(subprocessCallBack callBack){
-        new Thread(new Runnable() {
+    public void process(){
+        processThread = new Thread(new Runnable() {
+
             @Override
             public void run() {
                 Bundle bundle = null;
                 try {
-                    service.i = 0;
-                    switch (procedure.currentSubProcedure) {
-                        case -1:
-                            bundle = service.getTemplateCount();
-                            templateCount = bundle.getShort("count");
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 0:
-                        case 3:
-                            status("Scanning....");
-                            updateSubprocedure("Please put your finger on the scanner");
-                            bundle = service.readImage();
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 1:
-                            status("Converting...");
-                            updateSubprocedure("Please wait");
-                            bundle = service.convertImage(FINGERPRINT_CHARBUFFER1);
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 2:
-                            status("Searching....");
-                            bundle = service.searchTemplate(FINGERPRINT_CHARBUFFER1,0,-1,1000);
-                            if(bundle.getInt("found")==1){
-                                return;
-                            }
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 4:
-                            status("Converting....");
-                            updateSubprocedure("Please wait");
-                            bundle = service.convertImage(FINGERPRINT_CHARBUFFER2);
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 5:
-                            status("Comparing......");
-                            bundle = service.compareCharacteristics();
-                            if(bundle.getInt("match")==0){
-                                System.out.println("Not matched\n");
-                                return;
-                            }
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 6:
-                            status("Creating template....");
-                            bundle = service.createTemplate();
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 7:
-                            status("Storing.....");
-                            bundle = service.storeTemplate(templateCount,FINGERPRINT_CHARBUFFER1);
-                            callBack.subprocessCallBack(bundle);
-                            break;
+                    for(byte i=0;i<procedure.subProcedures.length;i++) {
+                        service.i = 0;
+                        switch (procedure.subProcedures[i]) {
+                            case FINGERPRINT_TEMPLATECOUNT:
+                                bundle = service.getTemplateCount();
+                                templateCount = bundle.getShort("count");
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_READIMAGE:
+                                status("Scanning....");
+                                bundle = service.readImage();
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_CONVERTIMAGE:
+                                status("Converting...");
+                                bundle = service.convertImage((procedure.subProcedures[i+1]==FINGERPRINT_COMPARECHARACTERISTICS)?FINGERPRINT_CHARBUFFER2:FINGERPRINT_CHARBUFFER1);
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_SEARCHTEMPLATE:
+                                status("Searching....");
+                                bundle = service.searchTemplate(FINGERPRINT_CHARBUFFER1, 0, -1, 1000);
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_COMPARECHARACTERISTICS:
+                                status("Comparing......");
+                                bundle = service.compareCharacteristics();
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_CREATETEMPLATE:
+                                status("Creating template....");
+                                bundle = service.createTemplate();
+                                updateSubprocedure(bundle,procedure.subProcedures[i+1]);
+                                break;
+                            case FINGERPRINT_STORETEMPLATE:
+                                status("Storing.....");
+                                bundle = service.storeTemplate(templateCount, FINGERPRINT_CHARBUFFER1);
+                                updateSubprocedure(bundle,(byte)0xff);
+                                break;
+                        }
                     }
                 }catch (Exception e){
-                    System.out.println(e.toString());
+                    bundle = new Bundle();
+                    bundle.putInt("interrupted",1);
+                    updateSubprocedure(bundle,(byte)0xff);
                 }
             }
-        }).start();
+        });
+        processThread.start();
     }
 
 
 
-    private void updateSubprocedure(String msg) {
+    private void updateSubprocedure(Bundle bundle,byte nextSubprocess) {
         Message message = new Message();
-        Bundle bundle = new Bundle();
-        bundle.putString("msg",msg);
-        message.setData(bundle);
-        procedure.handler.sendMessage(message);
-        log("\n\n"+msg+"\n\n");
+        if(bundle!=null) {
+            bundle.putByte("nextSubprocess", nextSubprocess);
+            message.setData(bundle);
+            procedure.handler.sendMessage(message);
+        }
     }
 
 
@@ -593,24 +612,9 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
     }
 
 
-
-
-
-    public void makeDialog(){
-        alertDialogBuilder = new AlertDialog.Builder(getContext());
-        LayoutInflater li = LayoutInflater.from(getContext());
-        View view = li.inflate(R.layout.fingerprint_scan,null);
-        instruction = view.findViewById(R.id.instruction);
-        alertDialogBuilder.setView(view);
-        alertDialog = alertDialogBuilder.create();
-        alertDialog.show();
-    }
-
-
     @Override
     public void register(AMSUser user) {
         enroll(user);
-        makeDialog();
     }
 }
 

@@ -10,6 +10,7 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
@@ -46,7 +47,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.util.ArrayDeque;
 import java.util.Base64;
-import java.util.Objects;
 
 import dl.tech.bioams.R307.Constants;
 import dl.tech.bioams.R307.CustomProber;
@@ -57,13 +57,12 @@ import dl.tech.bioams.databinding.ActivityUserModeBinding;
 import dl.tech.bioams.db.DatabaseHelper;
 import dl.tech.bioams.models.Procedure;
 import dl.tech.bioams.models.User;
-import dl.tech.bioams.ui.adminFragments.subprocessCallBack;
 
 /**
  * An example full-screen activity that shows and hides the system UI (i.e.
  * status bar and navigation/system bar) with user interaction.
  */
-public class UserMode extends AppCompatActivity implements View.OnClickListener, ServiceConnection, SerialListener, subprocessCallBack {
+public class UserMode extends AppCompatActivity implements View.OnClickListener, ServiceConnection, SerialListener {
     private View mContentView;
     private ActivityUserModeBinding binding;
 
@@ -76,8 +75,8 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
     private Connected connected = Connected.False;
     private FingerprintService service;
     private Procedure procedure;
-    private android.app.AlertDialog.Builder alertDialogBuilder;
-    private android.app.AlertDialog alertDialog;
+    private AlertDialog.Builder alertDialogBuilder;
+    private AlertDialog alertDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -129,7 +128,7 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
     }
 
     void adminMode(){
-        AlertDialog.Builder ab = new AlertDialog.Builder(this);
+        alertDialogBuilder = new AlertDialog.Builder(this);
         View view = getLayoutInflater().inflate(R.layout.adminmodedialog,null,false);
         TextInputEditText passwordTF = view.findViewById(R.id.passwordtf);
         view.findViewById(R.id.confirm_button).setOnClickListener(new View.OnClickListener() {
@@ -156,8 +155,8 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
                 }
             }
         });
-        ab.setView(view);
-        AlertDialog ad = ab.create();
+        alertDialogBuilder.setView(view);
+        AlertDialog ad = alertDialogBuilder.create();
         ad.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         ad.show();
     }
@@ -242,24 +241,67 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
         SQLiteDatabase sqLiteDatabase = helper.getReadableDatabase();
         Cursor cursor = sqLiteDatabase.query("users",new String[]{"name","user_id"},"fingerprint_id=?",new String[]{String.valueOf(position)},null,null,null);
         cursor.moveToFirst();
+        alertDialogBuilder = new AlertDialog.Builder(this);
         if(cursor.getCount()==0){
-            Toast.makeText(this, "No users", Toast.LENGTH_SHORT).show();
-            return;
+            alertDialogBuilder.setMessage("No fingerprint found");
+            alertDialogBuilder.setCancelable(false);
+            alertDialogBuilder.setPositiveButton("Retry", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialogInterface, int i) {
+                    dialogInterface.cancel();
+                    dialogInterface.dismiss();
+                   search();
+                }
+            });
+            alertDialogBuilder.setNegativeButton("No", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialogInterface, int i) {
+                    dialogInterface.cancel();
+                    dialogInterface.dismiss();
+                }
+            });
         }
-        Toast.makeText(this, "Hi "+cursor.getString(0), Toast.LENGTH_SHORT).show();
+        alertDialogBuilder.setMessage("Hey,"+cursor.getString(0));
+        alertDialogBuilder.create().show();
+    }
+
+
+    void dismissDialog(){
+        alertDialog.dismiss();
+        alertDialog.cancel();
+    }
+
+    void makeDialog(View view,boolean cancelable){
+        alertDialogBuilder = new AlertDialog.Builder(this);
+        alertDialogBuilder.setView(view);
+        alertDialogBuilder.setCancelable(cancelable);
+        alertDialog = alertDialogBuilder.create();
+        alertDialog.show();
     }
 
     public void search()  {
+        makeDialog(getLayoutInflater().inflate(R.layout.place_finger,null),false);
         procedure = new Procedure();
         procedure.handler = new Handler(Looper.getMainLooper()){
             @Override
             public void handleMessage(@NonNull Message msg) {
-                super.handleMessage(msg);
-                if(msg.getData().getString("msg").equals("done")) {
-                    if(msg.getData().getInt("position")==-1){
-                        return;
-                    }
-                    searchUserInDatabase(msg.getData().getInt("position"));
+                Bundle data = msg.getData();
+                switch (data.getByte("nextSubprocess")){
+                    case FINGERPRINT_READIMAGE:
+                        makeDialog(getLayoutInflater().inflate(R.layout.place_finger,null),false);
+                        break;
+                    case FINGERPRINT_CONVERTIMAGE:
+                        dismissDialog();
+                        makeDialog(getLayoutInflater().inflate(R.layout.searching,null),false);
+                        break;
+                    case (byte)0xff:
+                        dismissDialog();
+                        if(data.getInt("found")==0){
+                            Toast.makeText(getApplicationContext(), "User not found", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        searchUserInDatabase(data.getInt("position"));
+                        break;
                 }
             }
         };
@@ -270,49 +312,40 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
                 FINGERPRINT_SEARCHTEMPLATE
         };
         procedure.name = "search";
-        process(this);
+        process();
     }
 
-    @Override
-    public void subprocessCallBack(Bundle bundle) {
-        if(Objects.equals(procedure.name, "search") && procedure.currentSubProcedure==2){
-            updateSubprocedure("done",bundle.getShort("position"));
-        }
-        procedure.currentSubProcedure += 1;
-        process(this);
-    }
 
-    public void process(subprocessCallBack callBack){
-        log("in process");
+    public void process(){
         new Thread(new Runnable() {
             @Override
             public void run() {
                 Bundle bundle = null;
-                try {
-                    switch (procedure.currentSubProcedure) {
-                        case 0:
-                            status("Scanning....");
-                            updateSubprocedure("Please put your finger on the scanner",0);
-                            bundle = service.readImage();
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 1:
-                            status("Converting...");
-                            updateSubprocedure("Please wait",0);
-                            bundle = service.convertImage(FINGERPRINT_CHARBUFFER1);
-                            callBack.subprocessCallBack(bundle);
-                            break;
-                        case 2:
-                            status("Searching....");
-                            bundle = service.searchTemplate(FINGERPRINT_CHARBUFFER1,0,-1,1000);
-                            if(bundle.getInt("found")==0){
-                                bundle.putInt("position",-1);
-                            }
-                            callBack.subprocessCallBack(bundle);
-                            break;
+                updateSubprocedure(bundle,(byte)0);
+                for (int i = 0; i < procedure.subProcedures.length; i++) {
+                    try {
+                        switch (i) {
+                            case 0:
+                                status("Scanning....");
+                                bundle = service.readImage();
+                                updateSubprocedure(bundle, procedure.subProcedures[1]);
+                                break;
+                            case 1:
+                                status("Converting...");
+                                bundle = service.convertImage(FINGERPRINT_CHARBUFFER1);
+                                updateSubprocedure(bundle, procedure.subProcedures[2]);
+                                break;
+                            case 2:
+                                status("Searching....");
+                                bundle = service.searchTemplate(FINGERPRINT_CHARBUFFER1, 0, -1, 1000);
+                                System.out.println(bundle.getInt("position"));
+                                updateSubprocedure(bundle,(byte)0xff);
+                                break;
+                        }
+                        procedure.currentSubProcedure += 1;
+                    } catch (Exception e) {
+                        System.out.println(e.toString());
                     }
-                }catch (Exception e){
-                    System.out.println(e.toString());
                 }
             }
         }).start();
@@ -320,13 +353,13 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
 
 
 
-    private void updateSubprocedure(String msg,int position) {
+    private void updateSubprocedure(Bundle bundle,byte nextSubProcedure) {
         Message message = new Message();
-        Bundle bundle = new Bundle();
-        bundle.putString("msg",msg);
-        message.setData(bundle);
-        procedure.handler.sendMessage(message);
-        log("\n\n"+msg+"\n\n");
+        if(bundle!=null) {
+            bundle.putByte("nextSubprocess", nextSubProcedure);
+            message.setData(bundle);
+            procedure.handler.sendMessage(message);
+        }
     }
 
 
