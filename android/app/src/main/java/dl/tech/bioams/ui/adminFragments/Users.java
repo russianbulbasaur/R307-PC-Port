@@ -317,6 +317,7 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
 
     @Override
     public void onResponse(Bundle response) {
+        System.out.println(response.getString("response"));
         try {
             JSONArray arr = new JSONArray(response.getString("response"));
             AMSUser amsUser;
@@ -448,6 +449,7 @@ public class Users extends Fragment implements Response.Listener<Bundle>, Custom
                                 break;
                             case FINGERPRINT_READIMAGE:
                                 status("Scanning....");
+                                Thread.sleep(2500);
                                 bundle = service.readImage();
                                 updateSubprocedure(bundle,procedure.subProcedures[i+1]);
                                 break;

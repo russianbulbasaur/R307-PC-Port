@@ -90,6 +90,7 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
         SharedPreferences.Editor prefsEditor = prefs.edit();
         prefsEditor.putInt("usermode",1);
         prefsEditor.apply();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         startService(new Intent(this, FingerprintService.class));
         bindService(new Intent(this, FingerprintService.class), this, Context.BIND_AUTO_CREATE);
         init();
@@ -147,6 +148,8 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
                         SharedPreferences.Editor prefsEditor = prefs.edit();
                         prefsEditor.putInt("usermode",0);
                         prefsEditor.apply();
+                        Intent intent =  new Intent(getApplicationContext(),AdminPanel.class);
+                        startActivity(intent);
                         return;
                     }
                     passwordTF.setError("Password does not match");
@@ -169,6 +172,7 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
         ois.close();
         return user;
     }
+
 
     @SuppressLint("NonConstantResourceId")
     @Override
@@ -219,6 +223,7 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
 
     @Override
     public void onPause() {
+        finish();
         unregisterReceiver(usbPermissionReciever);
         super.onPause();
     }
@@ -322,8 +327,9 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
             public void run() {
                 Bundle bundle = null;
                 updateSubprocedure(bundle,(byte)0);
-                for (int i = 0; i < procedure.subProcedures.length; i++) {
-                    try {
+                try {
+                    Thread.sleep(3000);
+                    for (int i = 0; i < procedure.subProcedures.length; i++) {
                         switch (i) {
                             case 0:
                                 status("Scanning....");
@@ -343,9 +349,9 @@ public class UserMode extends AppCompatActivity implements View.OnClickListener,
                                 break;
                         }
                         procedure.currentSubProcedure += 1;
-                    } catch (Exception e) {
-                        System.out.println(e.toString());
                     }
+                } catch (Exception e) {
+                    System.out.println(e.toString());
                 }
             }
         }).start();
